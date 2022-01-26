@@ -6,6 +6,8 @@ from aiortc.codecs.vpx import (
     Vp8Decoder,
     Vp8Encoder,
     VpxPayloadDescriptor,
+    Vp9Encoder,
+    Vp9PayloadDescriptor,
     _vpx_assert,
     number_of_threads,
 )
@@ -260,3 +262,59 @@ class Vp8Test(CodecTestCase):
 
     def test_roundtrip_320_240(self):
         self.roundtrip_video(VP8_CODEC, 320, 240)
+
+class Vp9PayloadDescriptorTest(TestCase):
+
+    def test_parse(self):
+        descr, data = Vp9PayloadDescriptor.parse(b'\x88\x23')
+        self.assertTrue(descr.start_of_frame)
+        self.assertFalse(descr.end_of_frame)
+        self.assertEqual(descr.picture_id, 0x23)
+
+        descr, data = Vp9PayloadDescriptor.parse(b'\x84\x83\x22')
+        self.assertTrue(descr.end_of_frame)
+        self.assertFalse(descr.start_of_frame)
+        self.assertEqual(descr.picture_id, 0x0322)
+
+    def test_bytes(self):
+        descr_bytes = bytes(Vp9PayloadDescriptor(picture_id=0x12, start_of_frame=True, end_of_frame=False))
+        self.assertEqual(len(descr_bytes), 2)
+        self.assertEqual(descr_bytes[0] >> 7, 1)  # I, picture id present bit 
+
+        descr_bytes = bytes(Vp9PayloadDescriptor(picture_id=0x1234, start_of_frame=False, end_of_frame=True))
+        self.assertEqual(len(descr_bytes), 3)
+        self.assertEqual(descr_bytes[1] >> 7, 1)  # M, picture id extension octet present bit 
+
+    def test_short_picture_id(self):
+        descr_bytes = bytes(Vp9PayloadDescriptor(picture_id=0x12, start_of_frame=True, end_of_frame=False))
+        descr, data = Vp9PayloadDescriptor.parse(descr_bytes)
+
+        self.assertEqual(descr.picture_id, 0x12)
+        self.assertFalse(descr.picture_predicted_frame)
+        self.assertFalse(descr.flexible_mode)
+        self.assertTrue(descr.start_of_frame)
+        self.assertFalse(descr.end_of_frame)
+        self.assertFalse(descr.scalability_structure_present)
+        self.assertFalse(descr.layer_indices_present)
+        self.assertEqual(descr.tid, None)
+        self.assertFalse(descr.switch_up)
+        self.assertEqual(descr.sid, None)
+        self.assertFalse(descr.inter_layer_dependency_used)
+        self.assertEqual(descr.tl0picidx, None)
+
+    def test_long_picture_id(self):
+        descr_bytes = bytes(Vp9PayloadDescriptor(picture_id=0x1234, start_of_frame=False, end_of_frame=True))
+        descr, data = Vp9PayloadDescriptor.parse(descr_bytes)
+
+        self.assertEqual(descr.picture_id, 0x1234)
+        self.assertFalse(descr.picture_predicted_frame)
+        self.assertFalse(descr.flexible_mode)
+        self.assertFalse(descr.start_of_frame)
+        self.assertTrue(descr.end_of_frame)
+        self.assertFalse(descr.scalability_structure_present)
+        self.assertFalse(descr.layer_indices_present)
+        self.assertEqual(descr.tid, None)
+        self.assertFalse(descr.switch_up)
+        self.assertEqual(descr.sid, None)
+        self.assertFalse(descr.inter_layer_dependency_used)
+        self.assertEqual(descr.tl0picidx, None)

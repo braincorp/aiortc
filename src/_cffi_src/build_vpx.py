@@ -32,6 +32,7 @@ vpx_codec_err_t vpx_codec_enc_init(vpx_codec_ctx_t *ctx,
     libraries=["vpx"],
 )
 
+# for constant values see https://github.com/webmproject/libvpx/blob/main/vpx/vp8cx.h
 ffibuilder.cdef(
     """
 #define VPX_CODEC_USE_OUTPUT_PARTITION 0x20000
@@ -54,6 +55,8 @@ ffibuilder.cdef(
 #define VP8E_SET_NOISE_SENSITIVITY 15
 #define VP8E_SET_STATIC_THRESHOLD 17
 #define VP8E_SET_TOKEN_PARTITIONS 18
+
+#define VP9E_SET_LOSSLESS 32
 
 typedef enum {
   VPX_CODEC_OK,
