@@ -3,7 +3,7 @@ import fractions
 import time
 import uuid
 from abc import ABCMeta, abstractmethod
-from typing import Tuple
+from typing import Tuple, List
 
 from av import AudioFrame, VideoFrame
 from av.frame import Frame
@@ -33,11 +33,12 @@ class MediaStreamTrack(AsyncIOEventEmitter, metaclass=ABCMeta):
     """
 
     kind = "unknown"
-
+    
     def __init__(self) -> None:
         super().__init__()
         self.__ended = False
         self._id = str(uuid.uuid4())
+        self._recv_encoded_mode = False
 
     @property
     def id(self) -> str:
@@ -50,10 +51,28 @@ class MediaStreamTrack(AsyncIOEventEmitter, metaclass=ABCMeta):
     def readyState(self) -> str:
         return "ended" if self.__ended else "live"
 
+    @property
+    def recv_encoded_mode(self) -> bool:
+        """
+        The recv mode for data to send across the RTP channel.
+        When True, the RTCRtpSender will await the track 'recv_encoded' vice 'recv' for pre-encoded payloads & timestamp.
+        """
+        return self._recv_encoded_mode
+
+    @recv_encoded_mode.setter
+    def recv_encoded_mode(self, mode: bool):
+        self._recv_encoded_mode = mode
+
     @abstractmethod
     async def recv(self) -> Frame:
         """
         Receive the next :class:`~av.audio.frame.AudioFrame` or :class:`~av.video.frame.VideoFrame`.
+        """
+
+    @abstractmethod
+    async def recv_encoded(self) -> Tuple[List[bytes], int]:
+        """
+        Receive the next set of pre-encoded payloads & timestamp
         """
 
     def stop(self) -> None:
@@ -105,6 +124,14 @@ class AudioStreamTrack(MediaStreamTrack):
         frame.time_base = fractions.Fraction(1, sample_rate)
         return frame
 
+    async def recv_encoded(self) -> Tuple[List[bytes], int]:
+        """
+        Receive the next set of pre-encoded payloads & timestamp from a previous encoder.encode call.
+
+        The base implementation is stubbed.
+        subclass :class:`AudioStreamTrack` to provide a useful implementation.
+        """
+        return [], 0
 
 class VideoStreamTrack(MediaStreamTrack):
     """
@@ -144,3 +171,12 @@ class VideoStreamTrack(MediaStreamTrack):
         frame.pts = pts
         frame.time_base = time_base
         return frame
+
+    async def recv_encoded(self) -> Tuple[List[bytes], int]:
+        """
+        Receive the next set of pre-encoded payloads & timestamp from a previous encoder.encode call.
+
+        The base implementation is stubbed.
+        subclass :class:`VideoStreamTrack` to provide a useful implementation.
+        """
+        return [], 0

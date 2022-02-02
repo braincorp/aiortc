@@ -2,6 +2,7 @@ import asyncio
 from collections import OrderedDict
 from struct import pack
 from unittest import TestCase
+from typing import Tuple, List
 
 from aiortc import MediaStreamTrack
 from aiortc.codecs import PCMU_CODEC
@@ -40,6 +41,9 @@ class BuggyStreamTrack(MediaStreamTrack):
     kind = "audio"
 
     async def recv(self):
+        raise Exception("I'm a buggy track!")
+
+    async def recv_encoded(self):
         raise Exception("I'm a buggy track!")
 
 
@@ -89,6 +93,7 @@ class RTCRtpSenderTest(TestCase):
             [
                 RTCRtpCodecCapability(mimeType="video/VP8", clockRate=90000),
                 RTCRtpCodecCapability(mimeType="video/rtx", clockRate=90000),
+                RTCRtpCodecCapability(mimeType="video/VP9", clockRate=90000),
                 RTCRtpCodecCapability(
                     mimeType="video/H264",
                     clockRate=90000,
@@ -380,3 +385,43 @@ class RTCRtpSenderTest(TestCase):
         # stop track and wait for RTP loop to exit
         track.stop()
         run(asyncio.sleep(0.1))
+
+    def test_send_encoded(self):
+        """
+        Verify we can send pre-encoded payloads from a track.
+        """
+
+        class MockVP8EncodedVideoTrack(VideoStreamTrack):
+            def __init__(self):
+                super().__init__()
+                self.queue = asyncio.Queue()
+                self.recv_encoded_mode = True
+
+            def add_encoded(self, encoded: Tuple[List[bytes], int]):
+                self.queue.put_nowait(encoded)
+
+            async def recv_encoded(self):
+                payloads, timestamp = await self.queue.get()
+                return payloads, timestamp
+
+        mock_track = MockVP8EncodedVideoTrack()
+        sender = RTCRtpSender(mock_track, self.local_transport)
+        self.assertEqual(sender.kind, "video")
+        self.assertEqual(mock_track.recv_encoded_mode, True)
+
+        mock_track.recv_encoded_mode = False
+
+        encoded_frame = run(sender._next_encoded_frame(VP8_CODEC))  # will read default green videostreamtrack image and encode as vp8
+
+        payloads, timestamp = encoded_frame.payloads, encoded_frame.timestamp
+
+        mock_track.recv_encoded_mode = True
+
+        mock_track.add_encoded((payloads, timestamp + 1337))  # increment timestamp to identify frame
+
+        already_encoded_frame = run(sender._next_encoded_frame(VP8_CODEC))
+
+        assert already_encoded_frame.timestamp == encoded_frame.timestamp + 1337  # ensure preencoded frame pulled by sender
+        assert encoded_frame.payloads == already_encoded_frame.payloads  # ensure same packet result if we encode at runtime or preencode
+
+        run(sender.stop())
